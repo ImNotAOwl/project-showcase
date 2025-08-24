@@ -1,0 +1,87 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: projets-mongo
+    command:
+      [
+        'mongod',
+        '--replSet',
+        'rs0',
+        '--bind_ip_all',
+        '--auth',
+        '--port',
+        '27127',
+        '--keyFile',
+        '/run/secrets/mongo_keyfile',
+      ]
+    restart: unless-stopped
+    ports:
+      - '27127:27127'
+    env_file:
+      - ./.env
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/?authSource=admin --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - mongo_data:/data/db
+    networks: [web]
+    secrets:
+      - mongo_keyfile
+
+  mongo-init-replica:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    entrypoint: ['/bin/sh', '/scripts/init-replica.sh']
+    volumes:
+      - ./init-replica.sh:/scripts/init-replica.sh:ro
+    networks: [web]
+    restart: 'no'
+
+  app:
+    build: .
+    container_name: projets-app
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    volumes:
+      - uploads:/app/public/uploads
+    expose:
+      - '4000'
+    depends_on:
+      mongo-init-replica:
+        condition: service_completed_successfully
+    networks: [web]
+
+  caddy:
+    image: caddy:2
+    container_name: projets-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - uploads:/srv/uploads
+    networks: [web]
+
+secrets:
+  mongo_keyfile:
+    file: ./keys/mongo-keyfile
+
+volumes:
+  mongo_data:
+  uploads:
+  caddy_data:
+  caddy_config:
+
+networks:
+  web:
+    driver: bridge

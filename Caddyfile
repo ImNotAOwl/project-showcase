@@ -1,0 +1,10 @@
+projects.matthieusiegel.fr { 
+  encode zstd gzip
+  reverse_proxy app:4000
+
+  # Optionnel: Caddy sert /uploads (sinon l'app les sert via reverse_proxy)
+  handle_path /uploads/* {
+    root * /srv/uploads
+    file_server
+  }
+}
